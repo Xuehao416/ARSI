@@ -27,6 +27,12 @@
 | `arsi reflection apply <revisionID>`   | 将快照写到记录的用户资源路径；参见 [Reflection 规则](reflection_zh.md#将版本应用到后续实验)。 |
 | `arsi help [command]`                  | 显示命令列表或指定命令的帮助。                                                                |
 
+### 交互式 CLI
+
+在交互终端运行 `arsi` 或 `arsi shell` 打开终端工作台。用单引号或双引号包住含空格的参数。用 ↑ 和 ↓ 浏览历史，按 Tab 补全命令名，按 Ctrl+C 中断当前命令或退出空闲会话。提示符支持 `help`、`log-level`、`clear` 和 `exit`。
+
+CI 或重定向输入输出时使用标准 CLI 输出。JSON 结果写到 stdout，日志写到 stderr。
+
 ## CLI 参数
 
 基本语法如下，命令所需的位置参数见上表：
@@ -43,6 +49,8 @@ arsi [通用选项] <命令> [位置参数] [命令选项]
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `-h, --help`               | 显示帮助并退出。`arsi --help` 显示命令列表，`arsi <command> --help` 显示该命令的参数。                                                                                                    |
 | `--plugin-dir <directory>` | 从指定目录加载自定义插件和 Policy，可重复指定以加载多个扩展目录；详见[插件注册](writing-plugins_zh.md#第二步注册插件)和 [Policy 注册与 Recipe 配置](writing-policies_zh.md#注册-policy)。 |
+
+使用 `--log-level debug` 可以在终端查看更多细节。可重复指定 `--log-level`，用 `cli.runtime=trace` 这样的点分隔类别覆盖模块级别。用 `--log-file <path>` 追加写入日志文件，用 `-q` 或 `--quiet` 隐藏终端进度和常规日志。
 
 ### 命令专属选项
 

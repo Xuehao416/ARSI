@@ -27,6 +27,12 @@ Use `arsi --help` to list commands and `arsi <command> --help` for a command's s
 | `arsi reflection apply <revisionID>`   | Write the snapshot to its recorded user-resource paths; see the [Reflection rules](reflection.md#apply-a-revision-to-future-experiments). |
 | `arsi help [command]`                  | Show the command list or help for a specific command.                                                                                     |
 
+### Interactive CLI
+
+In an interactive terminal, run `arsi` or `arsi shell` to open the terminal workspace. Use single or double quotes around arguments containing spaces. Use ↑ and ↓ for history, Tab to complete command names, and Ctrl+C to interrupt the current command or leave an idle shell. The prompt accepts `help`, `log-level`, `clear`, and `exit`.
+
+Commands in CI or with redirected streams use the standard CLI output. JSON results go to stdout and logs go to stderr.
+
 ## CLI parameters
 
 The basic syntax is shown below. Required positional arguments appear in the command table above.
@@ -43,6 +49,8 @@ These options apply across commands:
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `-h, --help`               | Display help and exit. `arsi --help` lists commands; `arsi <command> --help` shows that command's parameters.                                                                                                                                                      |
 | `--plugin-dir <directory>` | Load custom plugins and Policies from a directory. Repeat the option for multiple directories; see [plugin registration](writing-plugins.md#step-2-register-the-plugin) and [Policy registration and Recipe configuration](writing-policies.md#register-a-policy). |
+
+Use `--log-level debug` for more terminal detail. Repeat `--log-level` with a dotted category such as `cli.runtime=trace` to override a module's level. Use `--log-file <path>` to append to a file and `-q` or `--quiet` to suppress terminal progress and routine logs.
 
 ### Command-specific options
 

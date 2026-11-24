@@ -1,78 +1,121 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
+import { findPackageJSON } from 'node:module';
 import { constants } from 'node:os';
 import type { Runtime } from '../../runtime/context.js';
+import { errorText } from '../../shared/errors.js';
 import {
-  errorText,
-  RuntimeCleanupInterruptedError,
-} from '../../shared/errors.js';
-import { runCommand, type CommandContext } from './commands.js';
+  runCommand,
+  type CommandContext,
+  type CommandOptions,
+} from './commands.js';
+import { configureCliLogging, runtimeLogger } from './logging.js';
 
 async function main(argv: string[]): Promise<number> {
-  let exitCode = 0;
+  const ci = process.env.CI?.toLowerCase();
+  const interactive =
+    Boolean(
+      process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY,
+    ) &&
+    (!ci || ci === '0' || ci === 'false');
   const controller = new AbortController();
-  const context = createCommandContext(controller.signal);
+  const logging = configureCliLogging(interactive);
   const abort = (signal: NodeJS.Signals = 'SIGINT'): void => {
     if (controller.signal.aborted)
       process.exit(128 + constants.signals[signal]);
     controller.abort(new Error('Interrupted'));
   };
-  // Keep the listeners installed during dispatch so signal-exit lets cleanup run.
   process.on('SIGINT', abort);
   process.on('SIGTERM', abort);
   try {
-    const result = await runCommand(argv, context);
-    if (result.stdout !== undefined) process.stdout.write(result.stdout);
-    exitCode = result.exitCode;
-  } catch (error) {
-    if (error instanceof RuntimeCleanupInterruptedError) {
-      process.stderr.write(errorText(error.interruption) + '\n');
-      writeRuntimeCleanupError(error.cause);
-    } else {
-      process.stderr.write(errorText(error) + '\n');
-    }
-    exitCode = controller.signal.aborted ? 130 : 1;
+    return await run(argv, controller.signal);
   } finally {
-    const cleanupExitCode = await context.disposeRuntime().finally(() => {
-      process.removeListener('SIGINT', abort);
-      process.removeListener('SIGTERM', abort);
-    });
-    exitCode ||= cleanupExitCode;
-  }
-  return exitCode;
-}
-
-function createCommandContext(
-  signal: AbortSignal,
-): CommandContext & { disposeRuntime(): Promise<0 | 1> } {
-  let runtime: Runtime | undefined;
-  async function releaseRuntime(): Promise<void> {
-    const current = runtime;
-    runtime = undefined;
-    await current?.dispose();
+    process.removeListener('SIGINT', abort);
+    process.removeListener('SIGTERM', abort);
+    logging.dispose();
   }
 
-  return {
-    signal,
-    async openRuntime(pluginDirectories) {
-      const { createRuntime } = await import('../../runtime/context.js');
-      runtime = await createRuntime({ pluginDirectories });
-      return runtime;
-    },
-    releaseRuntime,
-    async disposeRuntime() {
-      try {
-        await releaseRuntime();
-        return 0;
-      } catch (error) {
-        writeRuntimeCleanupError(error);
-        return 1;
-      }
-    },
-  };
+  async function run(
+    args: string[],
+    signal: AbortSignal,
+    session?: { options: CommandOptions; write: (text: string) => void },
+  ): Promise<number> {
+    let runtime: Runtime | undefined;
+    let display = session?.write;
+    const context: CommandContext = {
+      signal,
+      defaults: session?.options,
+      writeOut(text) {
+        if (display) display(text);
+        else process.stdout.write(text);
+      },
+      writeErr(text) {
+        if (display) display(text);
+        else process.stderr.write(text);
+      },
+      async openRuntime(pluginDirectories) {
+        runtimeLogger.debug('Opening runtime');
+        const { createRuntime } = await import('../../runtime/context.js');
+        runtime = await createRuntime({ pluginDirectories });
+        runtimeLogger.debug('Runtime ready');
+        return runtime;
+      },
+      async releaseRuntime() {
+        if (!runtime) return;
+        const current = runtime;
+        runtime = undefined;
+        runtimeLogger.trace('Disposing runtime');
+        await current.dispose();
+      },
+      dispatch(name, options, action) {
+        return logging.run(options, async () => {
+          if (!interactive || session || options.quiet) return action();
+          const { runCommandApp } = await import('./ink-ui.js');
+          return runCommandApp(name, logging, abort, async (write) => {
+            display = write;
+            try {
+              return await action();
+            } finally {
+              display = undefined;
+            }
+          });
+        });
+      },
+    };
+    if (interactive && !session) {
+      context.openShell = (options, commands) =>
+        logging.run(options, async () => {
+          const { runInteractiveShell } = await import('./ink-ui.js');
+          return runInteractiveShell({
+            options,
+            commands,
+            logging,
+            signal,
+            version: cliVersion(),
+            workspace: process.cwd(),
+            run: (words, commandSignal, defaults, write) =>
+              run(words, commandSignal, { options: defaults, write }),
+          });
+        });
+    }
+    try {
+      const result = await runCommand(args, context);
+      if (result.stdout !== undefined) context.writeOut?.(result.stdout);
+      return result.exitCode;
+    } catch (error) {
+      context.writeErr?.(`${errorText(error)}\n`);
+      return signal.aborted ? 130 : 1;
+    }
+  }
 }
 
-function writeRuntimeCleanupError(error: unknown): void {
-  process.stderr.write(`Failed to dispose runtime: ${errorText(error)}\n`);
+function cliVersion(): string {
+  const path = findPackageJSON(import.meta.url);
+  if (!path) return 'unknown';
+  const { version }: { version?: unknown } = JSON.parse(
+    readFileSync(path, 'utf8'),
+  );
+  return typeof version === 'string' ? version : 'unknown';
 }
 
 process.exitCode = await main(process.argv.slice(2));
